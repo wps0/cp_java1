@@ -21,23 +21,18 @@ public class ConcurrentStorageSystem implements StorageSystem {
     @Override
     public void execute(ComponentTransfer transfer) throws TransferException {
         try {
-            TransferData status = commit(transfer);
-
-            status.prepareSemaphore().acquire();
-            transfer.prepare();
-            status.performSemaphore().acquire();
-            transfer.perform();
-            // ...
+            commit(transfer);
         } catch (InterruptedException e) {
             handleUnexpectedInterruptedException();
         }
     }
 
-    private TransferData commit(ComponentTransfer transfer) throws TransferException, InterruptedException {
+    private void commit(ComponentTransfer transfer) throws TransferException, InterruptedException {
         commitSemaphore.acquire();
         try {
             validateOrThrow(transfer);
             // The transfer will be executed - it becomes a pending transfer
+
 
         } finally {
             commitSemaphore.release();
@@ -69,6 +64,8 @@ public class ConcurrentStorageSystem implements StorageSystem {
 
         // TODO: komponent, którego dotyczy transfer, jest jeszcze transferowany (wyjątek ComponentIsBeingOperatedOn).
     }
+
+
 
     public static void handleUnexpectedInterruptedException() {
         throw new RuntimeException("panic: unexpected thread interruption");
