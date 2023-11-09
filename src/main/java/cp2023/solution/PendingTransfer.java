@@ -10,17 +10,13 @@ public class PendingTransfer implements ComponentTransfer {
     private final ComponentTransfer originalTransfer;
     private final Device source;
     private final Device destination;
-    private PendingTransfer next;
-    // The transfer which will occupy the space taken by this component.
-    private PendingTransfer previous;
-    private final Semaphore previousWaitingSemaphore;
     private final Semaphore callingThreadLock;
+    private PendingTransfer previous;
 
     public PendingTransfer(ComponentTransfer originalTransfer, Device source, Device destination) {
         this.originalTransfer = originalTransfer;
         this.source = source;
         this.destination = destination;
-        this.previousWaitingSemaphore = new Semaphore(0);
         this.callingThreadLock = new Semaphore(0);
     }
 
@@ -41,33 +37,33 @@ public class PendingTransfer implements ComponentTransfer {
 
     @Override
     public void prepare() {
-        callingThreadLock.acquire();
         originalTransfer.prepare();
-        previousWaitingSemaphore.release();
+        if (previous != null)
+            previous.callingThreadLock.release();
     }
 
     @Override
     public void perform() {
-        try {
-            if (next != null) {
-                next.previousWaitingSemaphore.acquire();
-            }
-            originalTransfer.perform();
-        } catch (InterruptedException e) {
-            ConcurrentStorageSystem.handleUnexpectedInterruptedException();
-        }
-
-        if (previous == null && source != null) {
-            source.alterFreeSpace(-1);
-        }
-    }
-
-    public void connect(PendingTransfer preceding) {
-        preceding.next = this;
-        previous = preceding;
+        originalTransfer.perform();
     }
 
     public Semaphore callingThreadLock() {
         return callingThreadLock;
+    }
+
+    public PendingTransfer previous() {
+        return previous;
+    }
+
+    public void setPrevious(PendingTransfer previous) {
+        this.previous = previous;
+    }
+
+    public Device source() {
+        return source;
+    }
+
+    public Device destination() {
+        return destination;
     }
 }
