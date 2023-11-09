@@ -14,16 +14,14 @@ public class PendingTransfer implements ComponentTransfer {
     // The transfer which will occupy the space taken by this component.
     private PendingTransfer previous;
     private final Semaphore previousWaitingSemaphore;
-    private final Semaphore prot;
-    private boolean hasEnded;
+    private final Semaphore callingThreadLock;
 
     public PendingTransfer(ComponentTransfer originalTransfer, Device source, Device destination) {
         this.originalTransfer = originalTransfer;
         this.source = source;
         this.destination = destination;
         this.previousWaitingSemaphore = new Semaphore(0);
-        this.prot = new Semaphore(1);
-        this.hasEnded = false;
+        this.callingThreadLock = new Semaphore(0);
     }
 
     @Override
@@ -43,13 +41,7 @@ public class PendingTransfer implements ComponentTransfer {
 
     @Override
     public void prepare() {
-        if (next == null && destination != null) {
-            try {
-                destination.waitingForTransfer().acquire(1);
-            } catch (InterruptedException e) {
-                ConcurrentStorageSystem.handleUnexpectedInterruptedException();
-            }
-        }
+        callingThreadLock.acquire();
         originalTransfer.prepare();
         previousWaitingSemaphore.release();
     }
@@ -65,14 +57,17 @@ public class PendingTransfer implements ComponentTransfer {
             ConcurrentStorageSystem.handleUnexpectedInterruptedException();
         }
 
-        
         if (previous == null && source != null) {
             source.alterFreeSpace(-1);
         }
     }
 
-    public boolean tryToConnect(PendingTransfer preceding) {
+    public void connect(PendingTransfer preceding) {
         preceding.next = this;
         previous = preceding;
+    }
+
+    public Semaphore callingThreadLock() {
+        return callingThreadLock;
     }
 }
