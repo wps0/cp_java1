@@ -70,7 +70,24 @@ public class ConcurrentStorageSystem implements StorageSystem {
                 freeAllWaiting(cycle);
             }
 
-            executeTransfer(p);
+            p.callingThreadLock().acquire();
+            if (cycle.isEmpty()) {
+                devicesLock.acquire();
+                List<PendingTransfer> chain = makeAllowedChain(p, dst);
+                removeFromGraph(chain);
+                devicesLock.release();
+            }
+            p.prepare();
+            t.callingThreadLock().acquire();
+            t.perform();
+
+            // update the location of components
+            t.source().components().remove(t.getComponentId());
+            if (t.destination() != null)
+                t.destination().components().put(t.getComponentId(), true);
+
+            // DEADLOCK?
+            // TODO: znajdowanie potencjalnego następcy do chaina w execute transfer?
         }
     }
 
