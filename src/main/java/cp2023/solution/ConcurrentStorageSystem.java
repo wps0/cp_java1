@@ -40,12 +40,36 @@ public class ConcurrentStorageSystem implements StorageSystem {
     }
 
     private void handleMoveTransfer(ComponentTransfer transfer, Device src, Device dst) throws InterruptedException {
+        PendingTransfer p = new PendingTransfer(transfer, src, dst);
+
         devicesLock.acquire();
-
         if (dst.freeSpace() > 0) {
-            dst.modifyFreeSpace(-1);
+            // doesn't wait
+            moveWithoutWaiting(p, src, dst, true);
+        } else {
+            List<PendingTransfer> cycle = findCycle(p);
+            if (cycle.isEmpty()) {
+                p.destination().inbound().add(p);
+                devicesLock.release();
 
-
+                p.callingThreadLock().acquire();
+                devicesLock.acquire();
+                if (p.isFirst()) {
+                    // waits and is first (component deleted or transferred out)
+                    moveWithoutWaiting(p, src, dst, true);
+                } else {
+                    // waits and isn't first
+                    executeTransfer(p, true, false);
+                }
+            } else {
+                // doesn't wait and is first
+                p.setFirst(true);
+                removeFromGraph(cycle);
+                devicesLock.release();
+                linkTransfersInChain(cycle, true);
+                freeAllWaiting(cycle);
+                executeTransfer(p, false, true);
+            }
         }
     }
 
@@ -58,36 +82,10 @@ public class ConcurrentStorageSystem implements StorageSystem {
 
             transfer.prepare();
             transfer.perform();
+            dst.components().put(transfer.getComponentId(), true);
         } else {
-            PendingTransfer p = new PendingTransfer(transfer, null, dst);
-            dst.inbound().add(p);
-
-            List<PendingTransfer> cycle = findCycle(p);
-            removeFromGraph(cycle);
             devicesLock.release();
-            if (!cycle.isEmpty()) {
-                linkTransfersInChain(cycle, true);
-                freeAllWaiting(cycle);
-            }
-
-            p.callingThreadLock().acquire();
-            if (cycle.isEmpty()) {
-                devicesLock.acquire();
-                List<PendingTransfer> chain = makeAllowedChain(p, dst);
-                removeFromGraph(chain);
-                devicesLock.release();
-            }
-            p.prepare();
-            t.callingThreadLock().acquire();
-            t.perform();
-
-            // update the location of components
-            t.source().components().remove(t.getComponentId());
-            if (t.destination() != null)
-                t.destination().components().put(t.getComponentId(), true);
-
-            // DEADLOCK?
-            // TODO: znajdowanie potencjalnego następcy do chaina w execute transfer?
+            executeTransfer(new PendingTransfer(transfer, null, dst), false, true);
         }
     }
 
@@ -101,8 +99,8 @@ public class ConcurrentStorageSystem implements StorageSystem {
 
         linkTransfersInChain(chain, false);
         freeAllWaiting(chain);
-        executeTransfer(pendingTransfer);
-        freeSpaceFromLastInChain(chain);
+        executeTransfer(pendingTransfer, false, true);
+        freeSpaceFromLastInChainOrWake(chain);
     }
 
     private List<PendingTransfer> makeAllowedChain(PendingTransfer v, Device dev) {
@@ -152,8 +150,20 @@ public class ConcurrentStorageSystem implements StorageSystem {
         return false;
     }
 
+    private void moveWithoutWaiting(PendingTransfer p, Device src, Device dst, boolean skipSecondLock) throws InterruptedException {
+        dst.modifyFreeSpace(-1);
+        List<PendingTransfer> chain = makeAllowedChain(p, src);
+        removeFromGraph(chain);
+        devicesLock.release();
+
+        linkTransfersInChain(chain, false);
+        freeAllWaiting(chain);
+        executeTransfer(p, true, skipSecondLock);
+    }
+
     private void linkTransfersInChain(List<PendingTransfer> transfers, boolean isCycle) {
         PendingTransfer prv = isCycle ? transfers.get(transfers.size()-1) : null;
+        transfers.get(0).setFirst(true);
         for (PendingTransfer t : transfers) {
             t.setPrevious(prv);
             prv = t;
@@ -166,22 +176,35 @@ public class ConcurrentStorageSystem implements StorageSystem {
         }
     }
 
-    private void freeSpaceFromLastInChain(List<PendingTransfer> chain) throws InterruptedException {
+    private void freeSpaceFromLastInChainOrWake(List<PendingTransfer> chain) throws InterruptedException {
         PendingTransfer lastInChain = chain.get(chain.size() - 1);
         Device src = devices.getOrDefault(lastInChain.getSourceDeviceId(), null);
 
         if (src != null) {
             devicesLock.acquire();
-            src.modifyFreeSpace(1);
-            // todo: trigger further etc
+            if (src.inbound().isEmpty())
+                src.modifyFreeSpace(1);
+            else
+                wakeInboundTransfer(src);
             devicesLock.release();
         }
     }
 
-    private void executeTransfer(PendingTransfer t) throws InterruptedException {
-        t.callingThreadLock().acquire();
+    /**
+     * Has to be called with devicesLock held!
+     */
+    private void wakeInboundTransfer(Device dev) {
+        PendingTransfer next = dev.findOldestInbound();
+        next.setFirst(true);
+        next.callingThreadLock().release();
+    }
+
+    private void executeTransfer(PendingTransfer t, boolean skipFirstLock, boolean skipSecondLock) throws InterruptedException {
+        if (skipFirstLock)
+            t.callingThreadLock().acquire();
         t.prepare();
-        t.callingThreadLock().acquire();
+        if (skipSecondLock)
+            t.callingThreadLock().acquire();
         t.perform();
 
         // update the location of components
@@ -191,29 +214,29 @@ public class ConcurrentStorageSystem implements StorageSystem {
     }
 
     private void validateOrThrow(ComponentTransfer transfer) throws TransferException {
-//        if (transfer.getSourceDeviceId() == null && transfer.getDestinationDeviceId() == null) {
-//            throw new IllegalTransferType(transfer.getComponentId());
-//        }
-//
-//        if (!devices.containsKey(transfer.getDestinationDeviceId())) {
-//            throw new DeviceDoesNotExist(transfer.getDestinationDeviceId());
-//        }
-//
-//        if (!devices.containsKey(transfer.getSourceDeviceId())) {
-//            throw new DeviceDoesNotExist(transfer.getSourceDeviceId());
-//        }
-//
-//        Device source = devices.get(transfer.getSourceDeviceId());
-//        Device destination = devices.get(transfer.getDestinationDeviceId());
-//        if (!source.contains(transfer.getComponentId())) {
-//            throw new ComponentDoesNotExist(transfer.getComponentId(), source.id());
-//        }
-//
-//        if (destination.contains(transfer.getComponentId())) {
-//            throw new ComponentDoesNotNeedTransfer(transfer.getComponentId(), source.id());
-//        }
-//
-//        // TODO: komponent, którego dotyczy transfer, jest jeszcze transferowany (wyjątek ComponentIsBeingOperatedOn).
+        if (transfer.getSourceDeviceId() == null && transfer.getDestinationDeviceId() == null) {
+            throw new IllegalTransferType(transfer.getComponentId());
+        }
+
+        if (!devices.containsKey(transfer.getDestinationDeviceId())) {
+            throw new DeviceDoesNotExist(transfer.getDestinationDeviceId());
+        }
+
+        if (!devices.containsKey(transfer.getSourceDeviceId())) {
+            throw new DeviceDoesNotExist(transfer.getSourceDeviceId());
+        }
+
+        Device source = devices.get(transfer.getSourceDeviceId());
+        Device destination = devices.get(transfer.getDestinationDeviceId());
+        if (!source.contains(transfer.getComponentId())) {
+            throw new ComponentDoesNotExist(transfer.getComponentId(), source.id());
+        }
+
+        if (destination.contains(transfer.getComponentId())) {
+            throw new ComponentDoesNotNeedTransfer(transfer.getComponentId(), source.id());
+        }
+
+        // TODO: komponent, którego dotyczy transfer, jest jeszcze transferowany (wyjątek ComponentIsBeingOperatedOn).
     }
 
     public static void handleUnexpectedInterruptedException() {

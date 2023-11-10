@@ -42,6 +42,10 @@ public class Device {
         return inbound;
     }
 
+    public PendingTransfer findOldestInbound() {
+        return inbound.peek();
+    }
+
     public int freeSpace() {
         return freeSpace;
     }

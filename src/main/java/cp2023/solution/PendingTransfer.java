@@ -12,6 +12,7 @@ public class PendingTransfer implements ComponentTransfer {
     private final Device destination;
     private final Semaphore callingThreadLock;
     private PendingTransfer previous;
+    private boolean isFirst;
 
     public PendingTransfer(ComponentTransfer originalTransfer, Device source, Device destination) {
         this.originalTransfer = originalTransfer;
@@ -65,5 +66,13 @@ public class PendingTransfer implements ComponentTransfer {
 
     public Device destination() {
         return destination;
+    }
+
+    public void setFirst(boolean isFirst) {
+        this.isFirst = isFirst;
+    }
+
+    public boolean isFirst() {
+        return isFirst;
     }
 }
