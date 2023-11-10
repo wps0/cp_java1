@@ -19,8 +19,9 @@ public final class StorageSystemFactory {
     public static StorageSystem newSystem(
             Map<DeviceId, Integer> deviceTotalSlots,
             Map<ComponentId, DeviceId> componentPlacement) {
-        // FIXME: implement
-        throw new RuntimeException("not implemented");
+        ConcurrentStorageSystem sys = new ConcurrentStorageSystem();
+        sys.initialiseDevices(deviceTotalSlots);
+        componentPlacement.forEach((componentId, deviceId) -> sys.addComponent(deviceId, componentId));
+        return sys;
     }
-
 }

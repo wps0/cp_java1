@@ -19,6 +19,7 @@ public class Device {
         this.id = id;
         this.capacity = capacity;
         this.components = new ConcurrentHashMap<>();
+        this.inbound = new ConcurrentLinkedQueue<>();
         this.freeSpace = capacity;
     }
 

@@ -70,38 +70,46 @@ public final class TransferBurst {
         transferer.add(new Thread(new Runnable() {
             @Override
             public void run() {
+                int id = 1;
+                int id2 = (int) Thread.currentThread().getId();
                 sleep(10);
-                System.out.println("Transferer " + Thread.currentThread().getId() + " has started.");
+                System.out.println("Transferer " + id + " (" + id2 + ") has started.");
                 executeTransfer(system, 101, 1, 3, 20);
                 sleep(30);
                 executeTransfer(system, 105, 2, 0, 10);
-                System.out.println("Transferer " + Thread.currentThread().getId() + " has finished.");
+                System.out.println("Transferer " + id + " has finished.");
             }
         }));
         transferer.add(new Thread(new Runnable() {
             @Override
             public void run() {
-                System.out.println("Transferer " + Thread.currentThread().getId() + " has started.");
+                int id = 2;
+                int id2 = (int) Thread.currentThread().getId();
+                System.out.println("Transferer " + id + " (" + id2 + ") has started.");
                 executeTransfer(system, 110, 0, 1, 10);
-                System.out.println("Transferer " + Thread.currentThread().getId() + " has finished.");
+                System.out.println("Transferer " + id + " has finished.");
             }
         }));
         transferer.add(new Thread(new Runnable() {
             @Override
             public void run() {
-                System.out.println("Transferer " + Thread.currentThread().getId() + " has started.");
+                int id = 3;
+                int id2 = (int) Thread.currentThread().getId();
+                System.out.println("Transferer " + id + " (" + id2 + ") has started.");
                 executeTransfer(system, 109, 3, 2, 10);
                 sleep(30);
                 executeTransfer(system, 102, 1, 0, 10);
-                System.out.println("Transferer " + Thread.currentThread().getId() + " has finished.");
+                System.out.println("Transferer " + id + " has finished.");
             }
         }));
         transferer.add(new Thread(new Runnable() {
             @Override
             public void run() {
-                System.out.println("Transferer " + Thread.currentThread().getId() + " has started.");
+                int id = 4;
+                int id2 = (int) Thread.currentThread().getId();
+                System.out.println("Transferer " + id + " (" + id2 + ") has started.");
                 executeTransfer(system, 107, 3, 1, 10);
-                System.out.println("Transferer " + Thread.currentThread().getId() + " has finished.");
+                System.out.println("Transferer " + id + " has finished.");
             }
         }));
         return transferer;

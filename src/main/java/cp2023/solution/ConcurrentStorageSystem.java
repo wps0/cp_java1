@@ -1,5 +1,6 @@
 package cp2023.solution;
 
+import cp2023.base.ComponentId;
 import cp2023.base.ComponentTransfer;
 import cp2023.base.DeviceId;
 import cp2023.base.StorageSystem;
@@ -12,22 +13,36 @@ import java.util.concurrent.Semaphore;
 
 public class ConcurrentStorageSystem implements StorageSystem {
     private Semaphore devicesLock;
+    private Semaphore validationLock;
     private ConcurrentMap<DeviceId, Device> devices;
+    private Set<ComponentId> activeComponents;
 
     public ConcurrentStorageSystem() {
         this.devicesLock = new Semaphore(1);
+        this.validationLock = new Semaphore(1);
         this.devices = new ConcurrentHashMap<>();
+        this.activeComponents = Collections.synchronizedSet(new HashSet<>());
     }
 
     @Override
     public void execute(ComponentTransfer transfer) throws TransferException {
-        validateOrThrow(transfer);
+        try {
+            validationLock.acquire();
+            validateOrThrow(transfer);
+            activeComponents.add(transfer.getComponentId());
+            validationLock.release();
 
+            transfer(transfer);
+
+            activeComponents.remove(transfer.getComponentId());
+        } catch (InterruptedException e) {
+            handleUnexpectedInterruptedException();
+        }
     }
 
     private void transfer(ComponentTransfer transfer) throws InterruptedException {
-        Device src = devices.getOrDefault(transfer.getSourceDeviceId(), null);
-        Device dst = devices.getOrDefault(transfer.getDestinationDeviceId(), null);
+        Device src = transfer.getSourceDeviceId() == null ? null : devices.get(transfer.getSourceDeviceId());
+        Device dst = transfer.getDestinationDeviceId() == null ? null : devices.get(transfer.getDestinationDeviceId());
 
         if (src != null && dst != null)
             handleMoveTransfer(transfer, src, dst);
@@ -107,7 +122,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
         List<PendingTransfer> transfers = new ArrayList<>();
         Set<DeviceId> vis = new HashSet<>();
 
-        while (!dev.inbound().isEmpty()) {
+        while (dev != null && !dev.inbound().isEmpty()) {
             vis.add(dev.id());
             transfers.add(v);
 
@@ -162,6 +177,8 @@ public class ConcurrentStorageSystem implements StorageSystem {
     }
 
     private void linkTransfersInChain(List<PendingTransfer> transfers, boolean isCycle) {
+        if (transfers.isEmpty())
+            return;
         PendingTransfer prv = isCycle ? transfers.get(transfers.size()-1) : null;
         transfers.get(0).setFirst(true);
         for (PendingTransfer t : transfers) {
@@ -213,33 +230,46 @@ public class ConcurrentStorageSystem implements StorageSystem {
             t.destination().components().put(t.getComponentId(), true);
     }
 
+    // TODO: race conditions?
     private void validateOrThrow(ComponentTransfer transfer) throws TransferException {
         if (transfer.getSourceDeviceId() == null && transfer.getDestinationDeviceId() == null) {
             throw new IllegalTransferType(transfer.getComponentId());
         }
 
-        if (!devices.containsKey(transfer.getDestinationDeviceId())) {
-            throw new DeviceDoesNotExist(transfer.getDestinationDeviceId());
+        if (transfer.getDestinationDeviceId() != null) {
+            DeviceId did = transfer.getDestinationDeviceId();
+            if (!devices.containsKey(did))
+                throw new DeviceDoesNotExist(did);
+
+            Device destination = devices.get(did);
+            if (destination.contains(transfer.getComponentId()))
+                throw new ComponentDoesNotNeedTransfer(transfer.getComponentId(), did);
         }
 
-        if (!devices.containsKey(transfer.getSourceDeviceId())) {
-            throw new DeviceDoesNotExist(transfer.getSourceDeviceId());
+        if (transfer.getSourceDeviceId() != null) {
+            DeviceId sid = transfer.getSourceDeviceId();
+            if (!devices.containsKey(sid))
+                throw new DeviceDoesNotExist(sid);
+
+            Device source = devices.get(sid);
+            if (!source.contains(transfer.getComponentId()))
+                throw new ComponentDoesNotExist(transfer.getComponentId(), sid);
         }
 
-        Device source = devices.get(transfer.getSourceDeviceId());
-        Device destination = devices.get(transfer.getDestinationDeviceId());
-        if (!source.contains(transfer.getComponentId())) {
-            throw new ComponentDoesNotExist(transfer.getComponentId(), source.id());
+        if (activeComponents.contains(transfer.getComponentId())) {
+            throw new ComponentIsBeingOperatedOn(transfer.getComponentId());
         }
-
-        if (destination.contains(transfer.getComponentId())) {
-            throw new ComponentDoesNotNeedTransfer(transfer.getComponentId(), source.id());
-        }
-
-        // TODO: komponent, którego dotyczy transfer, jest jeszcze transferowany (wyjątek ComponentIsBeingOperatedOn).
     }
 
     public static void handleUnexpectedInterruptedException() {
         throw new RuntimeException("panic: unexpected thread interruption");
+    }
+
+    public void initialiseDevices(Map<DeviceId, Integer> deviceTotalSlots) {
+        deviceTotalSlots.forEach((id, capacity) -> devices.put(id, new Device(id, capacity)));
+    }
+
+    public void addComponent(DeviceId deviceId, ComponentId componentId) {
+        devices.get(deviceId).components().put(componentId, true);
     }
 }
