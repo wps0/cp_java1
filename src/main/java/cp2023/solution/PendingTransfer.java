@@ -11,7 +11,7 @@ public class PendingTransfer implements ComponentTransfer {
     private final Device source;
     private final Device destination;
     private final Semaphore callingThreadLock;
-    private PendingTransfer previous;
+    private PendingTransfer next;
     private boolean isFirst;
 
     public PendingTransfer(ComponentTransfer originalTransfer, Device source, Device destination) {
@@ -39,8 +39,8 @@ public class PendingTransfer implements ComponentTransfer {
     @Override
     public void prepare() {
         originalTransfer.prepare();
-        if (previous != null)
-            previous.callingThreadLock.release();
+        if (next != null)
+            next.callingThreadLock.release();
     }
 
     @Override
@@ -52,12 +52,12 @@ public class PendingTransfer implements ComponentTransfer {
         return callingThreadLock;
     }
 
-    public PendingTransfer previous() {
-        return previous;
+    public PendingTransfer next() {
+        return next;
     }
 
-    public void setPrevious(PendingTransfer previous) {
-        this.previous = previous;
+    public void setNext(PendingTransfer next) {
+        this.next = next;
     }
 
     public Device source() {

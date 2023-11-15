@@ -125,13 +125,14 @@ public class ConcurrentStorageSystem implements StorageSystem {
         List<PendingTransfer> transfers = new ArrayList<>();
         Set<DeviceId> vis = new HashSet<>();
 
+        transfers.add(v);
+
         while (dev != null && !dev.inbound().isEmpty()) {
             vis.add(dev.id());
-            transfers.add(v);
 
             for (PendingTransfer t : dev.inbound()) {
                 if (t.getSourceDeviceId() == null || !vis.contains(t.getSourceDeviceId())) {
-                    v = t;
+                    transfers.add(t);
                     if (t.getSourceDeviceId() != null)
                         dev = devices.get(t.getSourceDeviceId());
                     else
@@ -188,13 +189,19 @@ public class ConcurrentStorageSystem implements StorageSystem {
     }
 
     private void linkTransfersInChain(List<PendingTransfer> transfers, boolean isCycle) {
-        if (transfers.isEmpty())
-            return;
-        PendingTransfer prv = isCycle ? transfers.get(transfers.size()-1) : null;
         transfers.get(0).setFirst(true);
-        for (PendingTransfer t : transfers) {
-            t.setPrevious(prv);
-            prv = t;
+
+        Iterator<PendingTransfer> nextIt = transfers.iterator();
+        Iterator<PendingTransfer> it = transfers.iterator();
+        nextIt.next();
+
+        while (nextIt.hasNext()) {
+            PendingTransfer next = nextIt.next();
+            it.next().setNext(next);
+        }
+
+        if (isCycle) {
+            transfers.get(transfers.size() - 1).setNext(transfers.get(0));
         }
     }
 
