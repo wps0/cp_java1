@@ -16,6 +16,7 @@ import cp2023.base.ComponentTransfer;
 import cp2023.base.DeviceId;
 import cp2023.base.StorageSystem;
 import cp2023.exceptions.TransferException;
+import cp2023.solution.ConcurrentStorageSystem;
 import cp2023.solution.StorageSystemFactory;
 
 
@@ -25,6 +26,15 @@ public final class TransferBurst {
         StorageSystem system = setupSystem();
         Collection<Thread> users = setupTransferers(system);
         runTransferers(users);
+        printStatus(system);
+    }
+
+    private static void printStatus(StorageSystem system) {
+        ConcurrentStorageSystem css = (ConcurrentStorageSystem) system;
+        css.devices.forEach((deviceId, device) -> {
+            System.out.println("--------------");
+            System.out.println(device);
+        });
     }
 
     private final static StorageSystem setupSystem() {

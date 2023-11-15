@@ -3,7 +3,6 @@ package cp2023.solution;
 import cp2023.base.ComponentId;
 import cp2023.base.DeviceId;
 
-import java.awt.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
@@ -43,11 +42,41 @@ public class Device {
         return inbound;
     }
 
+    /*
+     * Isn't synchronised!
+     */
+    void insert(PendingTransfer t) {
+        inbound.add(t);
+    }
+
+    void remove(PendingTransfer t) {
+        inbound.remove(t);
+    }
+
+    void insertComponent(ComponentId id) {
+        components.put(id, true);
+    }
+
+    void removeComponent(ComponentId id) {
+        components.remove(id);
+    }
+
     public PendingTransfer findOldestInbound() {
         return inbound.peek();
     }
 
     public int freeSpace() {
         return freeSpace;
+    }
+
+    @Override
+    public String toString() {
+        return "Device{" +
+                "id=" + id +
+                ", capacity=" + capacity +
+                ", freeSpace=" + freeSpace +
+                ", components=" + components +
+                ", inbound=" + inbound +
+                '}';
     }
 }
