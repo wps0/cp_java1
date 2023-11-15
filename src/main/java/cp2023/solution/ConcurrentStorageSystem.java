@@ -60,7 +60,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
         devicesLock.acquire();
         if (dst.freeSpace() > 0) {
             // doesn't wait
-            moveWithoutWaiting(p, src, dst, true);
+            moveWithoutWaiting(p, src, dst);
         } else {
             List<PendingTransfer> cycle = findCycle(p);
             if (cycle.isEmpty()) {
@@ -71,8 +71,8 @@ public class ConcurrentStorageSystem implements StorageSystem {
                 p.callingThreadLock().acquire();
                 if (p.isFirst()) {
                     // waits and is first (component deleted or transferred out)
-                    moveWithoutWaiting(p, src, dst, true);
                     devicesLock.acquire();
+                    moveWithoutWaiting(p, src, dst);
                 } else {
                     // waits and isn't first (potentially in a cycle)
                     executeTransfer(p, true, false);
@@ -170,7 +170,8 @@ public class ConcurrentStorageSystem implements StorageSystem {
         return false;
     }
 
-    private void moveWithoutWaiting(PendingTransfer p, Device src, Device dst, boolean skipSecondLock) throws InterruptedException {
+    // Inherits the critical section - deviceLock.
+    private void moveWithoutWaiting(PendingTransfer p, Device src, Device dst) throws InterruptedException {
         dst.modifyFreeSpace(-1);
         List<PendingTransfer> chain = makeAllowedChain(p, src);
         removeFromGraph(chain);
@@ -222,10 +223,10 @@ public class ConcurrentStorageSystem implements StorageSystem {
     }
 
     private void executeTransfer(PendingTransfer t, boolean skipFirstLock, boolean skipSecondLock) throws InterruptedException {
-        if (skipFirstLock)
+        if (!skipFirstLock)
             t.callingThreadLock().acquire();
         t.prepare();
-        if (skipSecondLock)
+        if (!skipSecondLock)
             t.callingThreadLock().acquire();
         t.perform();
 
