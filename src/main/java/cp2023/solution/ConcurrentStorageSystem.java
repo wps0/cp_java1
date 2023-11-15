@@ -134,6 +134,8 @@ public class ConcurrentStorageSystem implements StorageSystem {
                     v = t;
                     if (t.getSourceDeviceId() != null)
                         dev = devices.get(t.getSourceDeviceId());
+                    else
+                        dev = null;
                     break;
                 }
             }
@@ -204,7 +206,9 @@ public class ConcurrentStorageSystem implements StorageSystem {
 
     private void freeSpaceFromLastInChainOrWake(List<PendingTransfer> chain) throws InterruptedException {
         PendingTransfer lastInChain = chain.get(chain.size() - 1);
-        Device src = devices.getOrDefault(lastInChain.getSourceDeviceId(), null);
+        Device src = null;
+        if (lastInChain.getSourceDeviceId() != null)
+            src = devices.get(lastInChain.getSourceDeviceId());
 
         if (src != null) {
             devicesLock.acquire();
