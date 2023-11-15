@@ -14,7 +14,7 @@ import java.util.concurrent.Semaphore;
 public class ConcurrentStorageSystem implements StorageSystem {
     private Semaphore devicesLock;
     private Semaphore validationLock;
-    private ConcurrentMap<DeviceId, Device> devices;
+    public ConcurrentMap<DeviceId, Device> devices; // TODO
     private Set<ComponentId> activeComponents;
 
     public ConcurrentStorageSystem() {
@@ -64,16 +64,17 @@ public class ConcurrentStorageSystem implements StorageSystem {
         } else {
             List<PendingTransfer> cycle = findCycle(p);
             if (cycle.isEmpty()) {
-                p.destination().inbound().add(p);
+                p.destination().insert(p);
                 devicesLock.release();
 
+                // The thread will be released when the transfer can be executed.
                 p.callingThreadLock().acquire();
-                devicesLock.acquire();
                 if (p.isFirst()) {
                     // waits and is first (component deleted or transferred out)
                     moveWithoutWaiting(p, src, dst, true);
+                    devicesLock.acquire();
                 } else {
-                    // waits and isn't first
+                    // waits and isn't first (potentially in a cycle)
                     executeTransfer(p, true, false);
                 }
             } else {
@@ -97,7 +98,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
 
             transfer.prepare();
             transfer.perform();
-            dst.components().put(transfer.getComponentId(), true);
+            dst.insertComponent(transfer.getComponentId());
         } else {
             devicesLock.release();
             executeTransfer(new PendingTransfer(transfer, null, dst), false, true);
@@ -142,9 +143,13 @@ public class ConcurrentStorageSystem implements StorageSystem {
     private void removeFromGraph(Collection<PendingTransfer> transfers) {
         for (PendingTransfer t : transfers)
             if (t.destination() != null)
-                t.destination().inbound().remove(t);
+                t.destination().remove(t);
     }
 
+
+    /** Finds a cycle, if it exists.
+     * @return A list containing vertices which constitute the cycle if it exists, an empty list otherwise.
+     */
     private List<PendingTransfer> findCycle(PendingTransfer v) {
         Deque<PendingTransfer> cycle = new ArrayDeque<>();
         if (!cycleDfs(v, cycle, v.destination()))
@@ -225,9 +230,18 @@ public class ConcurrentStorageSystem implements StorageSystem {
         t.perform();
 
         // update the location of components
-        t.source().components().remove(t.getComponentId());
+        // TODO czy to potrzebne
+        if (t.source() != null)
+            t.source().removeComponent(t.getComponentId());
         if (t.destination() != null)
-            t.destination().components().put(t.getComponentId(), true);
+            t.destination().insertComponent(t.getComponentId());
+
+//        // TODO ???
+//        if (t.previous() == null) {
+//            devicesLock.acquire();
+//            t.source().modifyFreeSpace(1);
+//            devicesLock.release();
+//        }
     }
 
     // TODO: race conditions?
@@ -270,6 +284,8 @@ public class ConcurrentStorageSystem implements StorageSystem {
     }
 
     public void addComponent(DeviceId deviceId, ComponentId componentId) {
-        devices.get(deviceId).components().put(componentId, true);
+        Device dev = devices.get(deviceId);
+        dev.insertComponent(componentId);
+        dev.modifyFreeSpace(-1);
     }
 }
