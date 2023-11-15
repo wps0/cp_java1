@@ -100,8 +100,10 @@ public class ConcurrentStorageSystem implements StorageSystem {
             transfer.perform();
             dst.insertComponent(transfer.getComponentId());
         } else {
+            PendingTransfer pt = new PendingTransfer(transfer, null, dst);
+            dst.inbound().add(pt);
             devicesLock.release();
-            executeTransfer(new PendingTransfer(transfer, null, dst), false, true);
+            executeTransfer(pt, false, false);
         }
     }
 
@@ -115,7 +117,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
 
         linkTransfersInChain(chain, false);
         freeAllWaiting(chain);
-        executeTransfer(pendingTransfer, false, true);
+        executeTransfer(pendingTransfer, true, true);
         freeSpaceFromLastInChainOrWake(chain);
     }
 
@@ -179,7 +181,8 @@ public class ConcurrentStorageSystem implements StorageSystem {
 
         linkTransfersInChain(chain, false);
         freeAllWaiting(chain);
-        executeTransfer(p, true, skipSecondLock);
+        executeTransfer(p, false, true);
+        freeSpaceFromLastInChainOrWake(chain);
     }
 
     private void linkTransfersInChain(List<PendingTransfer> transfers, boolean isCycle) {
