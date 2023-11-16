@@ -14,7 +14,7 @@ import java.util.concurrent.Semaphore;
 public class ConcurrentStorageSystem implements StorageSystem {
     private Semaphore devicesLock;
     private Semaphore validationLock;
-    public ConcurrentMap<DeviceId, Device> devices; // TODO
+    public ConcurrentMap<DeviceId, Device> devices; // TODO: public -> private i np. concurrent hash set?
     private Set<ComponentId> activeComponents;
 
     public ConcurrentStorageSystem() {
@@ -261,8 +261,9 @@ public class ConcurrentStorageSystem implements StorageSystem {
 
     // TODO: race conditions?
     private void validateOrThrow(ComponentTransfer transfer) throws TransferException {
+        ComponentId id = transfer.getComponentId();
         if (transfer.getSourceDeviceId() == null && transfer.getDestinationDeviceId() == null) {
-            throw new IllegalTransferType(transfer.getComponentId());
+            throw new IllegalTransferType(id);
         }
 
         if (transfer.getDestinationDeviceId() != null) {
@@ -271,8 +272,11 @@ public class ConcurrentStorageSystem implements StorageSystem {
                 throw new DeviceDoesNotExist(did);
 
             Device destination = devices.get(did);
-            if (destination.contains(transfer.getComponentId()))
-                throw new ComponentDoesNotNeedTransfer(transfer.getComponentId(), did);
+            if (transfer.getSourceDeviceId() == null && destination.contains(id))
+                throw new ComponentAlreadyExists(id, did);
+
+            if (destination.contains(id))
+                throw new ComponentDoesNotNeedTransfer(id, did);
         }
 
         if (transfer.getSourceDeviceId() != null) {
@@ -281,12 +285,12 @@ public class ConcurrentStorageSystem implements StorageSystem {
                 throw new DeviceDoesNotExist(sid);
 
             Device source = devices.get(sid);
-            if (!source.contains(transfer.getComponentId()))
-                throw new ComponentDoesNotExist(transfer.getComponentId(), sid);
+            if (!source.contains(id))
+                throw new ComponentDoesNotExist(id, sid);
         }
 
-        if (activeComponents.contains(transfer.getComponentId())) {
-            throw new ComponentIsBeingOperatedOn(transfer.getComponentId());
+        if (activeComponents.contains(id)) {
+            throw new ComponentIsBeingOperatedOn(id);
         }
     }
 
