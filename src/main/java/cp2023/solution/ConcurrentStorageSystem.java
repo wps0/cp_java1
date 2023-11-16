@@ -156,13 +156,13 @@ public class ConcurrentStorageSystem implements StorageSystem {
      * @return A list containing vertices which constitute the cycle if it exists, an empty list otherwise.
      */
     private List<PendingTransfer> findCycle(PendingTransfer v) {
-        Deque<PendingTransfer> cycle = new ArrayDeque<>();
+        Stack<PendingTransfer> cycle = new Stack<>();
         if (!cycleDfs(v, cycle, v.destination()))
             return List.of();
         return cycle.parallelStream().toList();
     }
 
-    private boolean cycleDfs(PendingTransfer v, Deque<PendingTransfer> hist, Device end) {
+    private boolean cycleDfs(PendingTransfer v, Stack<PendingTransfer> hist, Device end) {
         hist.push(v);
         if (v.source() == end)
             return true;
@@ -173,7 +173,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
             }
         }
 
-        hist.pollLast();
+        hist.pop();
         return false;
     }
 

@@ -75,4 +75,15 @@ public class PendingTransfer implements ComponentTransfer {
     public boolean isFirst() {
         return isFirst;
     }
+
+    @Override
+    public String toString() {
+        return "PendingTransfer{" +
+                "originalTransfer=" + originalTransfer +
+                ", source=" + (source == null ? "null" : source.id()) +
+                ", destination=" + (destination == null ? "null" : destination.id()) +
+                ", next=" + (next != null ? next.originalTransfer.toString() : "null") +
+                ", isFirst=" + isFirst +
+                '}';
+    }
 }
