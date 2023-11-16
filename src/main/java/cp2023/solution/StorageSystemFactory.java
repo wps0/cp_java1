@@ -7,11 +7,7 @@
  */
 package cp2023.solution;
 
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
 import cp2023.base.ComponentId;
@@ -36,16 +32,6 @@ public final class StorageSystemFactory {
         if (minCapacity <= 0) {
             throw new IllegalArgumentException("A device cannot have capacity <= 0");
         }
-
-//        // TODO: powtarzające się id?
-//        Set<DeviceId> deviceIds = new HashSet<>();
-//        for (DeviceId id : deviceTotalSlots.keySet()) {
-//            System.out.println("Device id " + id);
-//            if (deviceIds.contains(id)) {
-//                throw new IllegalArgumentException("Multiple devices with the same id");
-//            }
-//            deviceIds.add(id);
-//        }
 
         // Device overflow & non-existent devices
         Map<DeviceId, Long> count = componentPlacement.entrySet()
