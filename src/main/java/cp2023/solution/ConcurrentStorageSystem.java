@@ -13,13 +13,11 @@ import java.util.concurrent.Semaphore;
 
 public class ConcurrentStorageSystem implements StorageSystem {
     private Semaphore devicesLock;
-    private Semaphore validationLock;
     public ConcurrentMap<DeviceId, Device> devices; // TODO: public -> private i np. concurrent hash set?
     private Set<ComponentId> activeComponents;
 
     public ConcurrentStorageSystem() {
         this.devicesLock = new Semaphore(1);
-        this.validationLock = new Semaphore(1);
         this.devices = new ConcurrentHashMap<>();
         this.activeComponents = Collections.synchronizedSet(new HashSet<>());
     }
@@ -27,10 +25,13 @@ public class ConcurrentStorageSystem implements StorageSystem {
     @Override
     public void execute(ComponentTransfer transfer) throws TransferException {
         try {
-            validationLock.acquire();
-            validateOrThrow(transfer);
-            activeComponents.add(transfer.getComponentId());
-            validationLock.release();
+            try {
+                devicesLock.acquire();
+                validateOrThrow(transfer);
+                activeComponents.add(transfer.getComponentId());
+            } finally {
+                devicesLock.release();
+            }
 
             transfer(transfer);
 
@@ -79,12 +80,11 @@ public class ConcurrentStorageSystem implements StorageSystem {
                 }
             } else {
                 // doesn't wait and is first
-                p.setFirst(true);
                 removeFromGraph(cycle);
                 devicesLock.release();
                 linkTransfersInChain(cycle, true);
                 freeAllWaiting(cycle);
-                executeTransfer(p, false, true);
+                executeTransfer(p, false, false);
             }
         }
     }
@@ -159,19 +159,21 @@ public class ConcurrentStorageSystem implements StorageSystem {
         Deque<PendingTransfer> cycle = new ArrayDeque<>();
         if (!cycleDfs(v, cycle, v.destination()))
             return List.of();
-        cycle.addFirst(v);
         return cycle.parallelStream().toList();
     }
 
     private boolean cycleDfs(PendingTransfer v, Deque<PendingTransfer> hist, Device end) {
-        for (PendingTransfer x : v.source().inbound()) {
-            if (x.source() != null && x.source() != end) {
-                hist.push(x);
-                cycleDfs(x, hist, end);
-                hist.pollLast();
-            } else
-                return x.source() == end;
+        hist.push(v);
+        if (v.source() == end)
+            return true;
+        if (v.source() != null) {
+            for (PendingTransfer x : v.source().inbound()) {
+                if (cycleDfs(x, hist, end))
+                    return true;
+            }
         }
+
+        hist.pollLast();
         return false;
     }
 
@@ -259,7 +261,10 @@ public class ConcurrentStorageSystem implements StorageSystem {
 //        }
     }
 
-    // TODO: race conditions?
+
+    /**
+     * Has to be called with devicesLock held.
+     */
     private void validateOrThrow(ComponentTransfer transfer) throws TransferException {
         ComponentId id = transfer.getComponentId();
         if (transfer.getSourceDeviceId() == null && transfer.getDestinationDeviceId() == null) {
