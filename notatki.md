@@ -1,0 +1,2 @@
+- komponent jest na urządzeniu w pewnym momencie wykonania perform
+- 
