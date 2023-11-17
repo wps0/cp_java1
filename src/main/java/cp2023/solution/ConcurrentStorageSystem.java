@@ -17,7 +17,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
     private Set<ComponentId> activeComponents;
 
     public ConcurrentStorageSystem() {
-        this.devicesLock = new Semaphore(1);
+        this.devicesLock = new Semaphore(1, true);
         this.devices = new ConcurrentHashMap<>();
         this.activeComponents = Collections.synchronizedSet(new HashSet<>());
     }
@@ -65,16 +65,18 @@ public class ConcurrentStorageSystem implements StorageSystem {
         } else {
             List<PendingTransfer> cycle = findCycle(p);
             if (cycle.isEmpty()) {
-                p.destination().insert(p);
+                p.destination().insertInbound(p);
                 devicesLock.release();
 
                 // The thread will be released when the transfer can be executed.
                 p.callingThreadLock().acquire();
+                devicesLock.acquire();
                 if (p.isFirst()) {
                     // waits and is first (component deleted or transferred out)
-                    devicesLock.acquire();
+                    devicesLock.release();
                     moveWithoutWaiting(p, src, dst);
                 } else {
+                    devicesLock.release();
                     // waits and isn't first (potentially in a cycle)
                     executeTransfer(p, true, false);
                 }
@@ -103,7 +105,16 @@ public class ConcurrentStorageSystem implements StorageSystem {
             PendingTransfer pt = new PendingTransfer(transfer, null, dst);
             dst.inbound().add(pt);
             devicesLock.release();
-            executeTransfer(pt, false, false);
+
+            pt.callingThreadLock().acquire();
+            devicesLock.acquire();
+            if (pt.isFirst()) {
+                devicesLock.release();
+                executeTransfer(pt, true, true);
+            } else {
+                devicesLock.release();
+                executeTransfer(pt, true, false);
+            }
         }
     }
 

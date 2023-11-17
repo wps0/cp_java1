@@ -6,6 +6,7 @@ import cp2023.base.DeviceId;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 public class Device {
     private final DeviceId id;
@@ -13,12 +14,14 @@ public class Device {
     private int freeSpace;
     private ConcurrentMap<ComponentId, Boolean> components;
     private ConcurrentLinkedQueue<PendingTransfer> inbound;
+    private ConcurrentSkipListSet<PendingTransfer> executingTransfers;
 
     public Device(DeviceId id, int capacity) {
         this.id = id;
         this.capacity = capacity;
         this.components = new ConcurrentHashMap<>();
         this.inbound = new ConcurrentLinkedQueue<>();
+        this.executingTransfers = new ConcurrentSkipListSet<>();
         this.freeSpace = capacity;
     }
 
@@ -42,10 +45,11 @@ public class Device {
         return inbound;
     }
 
-    /*
-     * Isn't synchronised!
-     */
-    void insert(PendingTransfer t) {
+    public ConcurrentSkipListSet<PendingTransfer> executingTransfers() {
+        return executingTransfers;
+    }
+
+    void insertInbound(PendingTransfer t) {
         inbound.add(t);
     }
 
