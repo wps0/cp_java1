@@ -38,7 +38,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
 
             activeComponents.remove(transfer.getComponentId());
         } catch (InterruptedException e) {
-            handleUnexpectedInterruptedException();
+            throw new RuntimeException("panic: unexpected thread interruption");
         }
     }
 
@@ -96,7 +96,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
         } else {
             PendingTransfer pt = new PendingTransfer(transfer, null, dst);
             if (!tryToLinkWithExecutingTransfer(pt)) {
-                pt.destination().insertInbound(pt);
+                dst.insertInbound(pt);
             }
             devicesLock.release();
             executeTransfer(pt);
@@ -162,7 +162,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
     private void removeFromGraph(Collection<PendingTransfer> transfers) {
         for (PendingTransfer t : transfers)
             if (t.destination() != null)
-                t.destination().remove(t);
+                t.destination().removeInbound(t);
     }
 
     /**
@@ -189,16 +189,19 @@ public class ConcurrentStorageSystem implements StorageSystem {
     }
 
 
-    /** Finds a cycle if it exists.
+    /** Finds a cycle if it exists. Requires devicesLock to be held.
      * @return A list containing vertices which constitute the cycle if it exists, an empty list otherwise.
      */
     private List<PendingTransfer> findCycle(PendingTransfer v) {
         Stack<PendingTransfer> cycle = new Stack<>();
         if (!cycleDfs(v, cycle, v.destination()))
             return List.of();
-        return cycle.parallelStream().toList();
+        return cycle.stream().toList();
     }
 
+    /**
+     * Requires devicesLock to be held!
+     */
     private boolean cycleDfs(PendingTransfer v, Stack<PendingTransfer> hist, Device end) {
         hist.push(v);
         if (v.source() == end)
@@ -303,10 +306,6 @@ public class ConcurrentStorageSystem implements StorageSystem {
         if (activeComponents.contains(id)) {
             throw new ComponentIsBeingOperatedOn(id);
         }
-    }
-
-    public static void handleUnexpectedInterruptedException() {
-        throw new RuntimeException("panic: unexpected thread interruption");
     }
 
     public void initialiseDevices(Map<DeviceId, Integer> deviceTotalSlots) {

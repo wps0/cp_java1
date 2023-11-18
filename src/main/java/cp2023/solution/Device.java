@@ -3,8 +3,9 @@ package cp2023.solution;
 import cp2023.base.ComponentId;
 import cp2023.base.DeviceId;
 
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 
@@ -13,20 +14,21 @@ public class Device {
     private final int capacity;
     private int freeSpace;
     private ConcurrentMap<ComponentId, Boolean> components;
-    private ConcurrentLinkedQueue<PendingTransfer> inbound;
+    private Queue<PendingTransfer> inbound;
     private ConcurrentSkipListSet<PendingTransfer> executingTransfers;
 
     public Device(DeviceId id, int capacity) {
         this.id = id;
         this.capacity = capacity;
         this.components = new ConcurrentHashMap<>();
-        this.inbound = new ConcurrentLinkedQueue<>();
+        this.inbound = new LinkedList<>();
         this.executingTransfers = new ConcurrentSkipListSet<>();
         this.freeSpace = capacity;
     }
 
     public void modifyFreeSpace(int delta) {
         freeSpace += delta;
+        assert(freeSpace >= 0);
     }
 
     public boolean contains(ComponentId id) {
@@ -37,11 +39,7 @@ public class Device {
         return id;
     }
 
-    public ConcurrentMap<ComponentId, Boolean> components() {
-        return components;
-    }
-
-    public ConcurrentLinkedQueue<PendingTransfer> inbound() {
+    public Queue<PendingTransfer> inbound() {
         return inbound;
     }
 
@@ -53,7 +51,7 @@ public class Device {
         inbound.add(t);
     }
 
-    void remove(PendingTransfer t) {
+    void removeInbound(PendingTransfer t) {
         inbound.remove(t);
     }
 
@@ -63,10 +61,6 @@ public class Device {
 
     void removeComponent(ComponentId id) {
         components.remove(id);
-    }
-
-    public PendingTransfer findOldestInbound() {
-        return inbound.peek();
     }
 
     public int freeSpace() {
