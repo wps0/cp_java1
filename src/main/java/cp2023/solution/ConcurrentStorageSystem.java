@@ -124,10 +124,12 @@ public class ConcurrentStorageSystem implements StorageSystem {
         devicesLock.acquire();
         List<PendingTransfer> chain = makeAllowedChain(pendingTransfer, src);
         removeFromGraph(chain);
+        addExecutingTransfer(chain.get(chain.size()-1));
         devicesLock.release();
 
         linkTransfersInChain(chain, false);
         freeAllWaiting(chain);
+        // TODO: co gdy ostatni transfer puścił free, a po tym dołączył się inny na jego koniec -> deadlock
         executeTransfer(pendingTransfer, true, true);
         freeSpaceFromLastInChainOrWake(chain);
     }
@@ -193,9 +195,9 @@ public class ConcurrentStorageSystem implements StorageSystem {
         dst.modifyFreeSpace(-1);
         List<PendingTransfer> chain = makeAllowedChain(p, src);
         removeFromGraph(chain);
+        linkTransfersInChain(chain, false); // TODO: czy to w locku?
         devicesLock.release();
 
-        linkTransfersInChain(chain, false);
         freeAllWaiting(chain);
         executeTransfer(p, false, true);
         freeSpaceFromLastInChainOrWake(chain);
@@ -272,6 +274,11 @@ public class ConcurrentStorageSystem implements StorageSystem {
 //        }
     }
 
+    private void addExecutingTransfer(PendingTransfer t) {
+        if (t.source() != null) {
+            t.source().executingTransfers().add(t);
+        }
+    }
 
     /**
      * Has to be called with devicesLock held.

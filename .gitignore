@@ -39,3 +39,5 @@ build/
 
 .idea
 *~
+
+src/main/java/cp2023/demo/tests/

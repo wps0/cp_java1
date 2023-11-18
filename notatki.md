@@ -33,4 +33,4 @@
   > 12 November 2023
 - każdy komponent na wejściu ma być linkowany do najstarszego?
 - transfer jest dozwolony, gdy ten inny zacznie się wykonywać!
-- 
+- semafor silnie uczciwy != uczciwy
