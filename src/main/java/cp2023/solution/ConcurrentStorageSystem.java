@@ -9,6 +9,7 @@ import cp2023.exceptions.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.Semaphore;
 
 public class ConcurrentStorageSystem implements StorageSystem {
@@ -61,33 +62,24 @@ public class ConcurrentStorageSystem implements StorageSystem {
         devicesLock.acquire();
         if (dst.freeSpace() > 0) {
             // doesn't wait
-            moveWithoutWaiting(p, src, dst);
+            dst.modifyFreeSpace(-1);
+            devicesLock.release();
+            buildExecutionChainAndExecute(p);
         } else {
             List<PendingTransfer> cycle = findCycle(p);
             if (cycle.isEmpty()) {
-                p.destination().insertInbound(p);
-                devicesLock.release();
-
-                // The thread will be released when the transfer can be executed.
-                p.callingThreadLock().acquire();
-                devicesLock.acquire();
-                if (p.isFirst()) {
-                    // waits and is first (component deleted or transferred out)
-                    devicesLock.release();
-                    moveWithoutWaiting(p, src, dst);
-                } else {
-                    devicesLock.release();
-                    // waits and isn't first (potentially in a cycle)
-                    executeTransfer(p, true, false);
+                if (!tryToLinkWithExecutingTransfer(p)) {
+                    p.destination().insertInbound(p);
                 }
+                devicesLock.release();
             } else {
-                // doesn't wait and is first
                 removeFromGraph(cycle);
                 devicesLock.release();
                 linkTransfersInChain(cycle, true);
                 freeAllWaiting(cycle);
-                executeTransfer(p, false, false);
             }
+
+            executeTransfer(p);
         }
     }
 
@@ -103,35 +95,44 @@ public class ConcurrentStorageSystem implements StorageSystem {
             dst.insertComponent(transfer.getComponentId());
         } else {
             PendingTransfer pt = new PendingTransfer(transfer, null, dst);
-            dst.inbound().add(pt);
-            devicesLock.release();
-
-            pt.callingThreadLock().acquire();
-            devicesLock.acquire();
-            if (pt.isFirst()) {
-                devicesLock.release();
-                executeTransfer(pt, true, true);
-            } else {
-                devicesLock.release();
-                executeTransfer(pt, true, false);
+            if (!tryToLinkWithExecutingTransfer(pt)) {
+                pt.destination().insertInbound(pt);
             }
+            devicesLock.release();
+            executeTransfer(pt);
         }
     }
 
     private void handleDeleteTransfer(ComponentTransfer transfer, Device src) throws InterruptedException {
-        PendingTransfer pendingTransfer = new PendingTransfer(transfer, src, null);
+        buildExecutionChainAndExecute(new PendingTransfer(transfer, src, null));
+    }
 
-        devicesLock.acquire();
-        List<PendingTransfer> chain = makeAllowedChain(pendingTransfer, src);
+    /**
+     * Requires devicesLock to be held!
+     */
+    private PendingTransfer buildExecutionChain(PendingTransfer start) {
+        List<PendingTransfer> chain = makeAllowedChain(start, start.source());
+        PendingTransfer lastInChain = chain.get(chain.size()-1);
         removeFromGraph(chain);
-        addExecutingTransfer(chain.get(chain.size()-1));
+        addExecutingTransfer(lastInChain);
+        linkTransfersInChain(chain, false);
+
+        return lastInChain;
+    }
+
+    private void buildExecutionChainAndExecute(PendingTransfer start) throws InterruptedException {
+        devicesLock.acquire();
+        PendingTransfer lastInChain = buildExecutionChain(start);
         devicesLock.release();
 
-        linkTransfersInChain(chain, false);
-        freeAllWaiting(chain);
-        // TODO: co gdy ostatni transfer puścił free, a po tym dołączył się inny na jego koniec -> deadlock
-        executeTransfer(pendingTransfer, true, true);
-        freeSpaceFromLastInChainOrWake(chain);
+        start.prepareLock().release();
+        executeTransfer(start);
+
+        devicesLock.acquire();
+        if (lastInChain.next() == null) {
+            removeExecutingTransferAndFreeSpace(lastInChain);
+        }
+        devicesLock.release();
     }
 
     private List<PendingTransfer> makeAllowedChain(PendingTransfer v, Device dev) {
@@ -164,8 +165,31 @@ public class ConcurrentStorageSystem implements StorageSystem {
                 t.destination().remove(t);
     }
 
+    /**
+     * Requires devicesLock to be held!
+     */
+    private void link(PendingTransfer next, PendingTransfer previos) {
+        next.setPrevious(previos);
+        previos.setNext(next);
+    }
 
-    /** Finds a cycle, if it exists.
+    /**
+     * Requires devicesLock to be held!
+     */
+    private boolean tryToLinkWithExecutingTransfer(PendingTransfer t) {
+        ConcurrentSkipListSet<PendingTransfer> et = t.destination().executingTransfers();
+        if (et.isEmpty()) {
+            return false;
+        }
+
+        PendingTransfer lastInChain = et.pollFirst();
+        link(t, lastInChain);
+        buildExecutionChain(t);
+        return true;
+    }
+
+
+    /** Finds a cycle if it exists.
      * @return A list containing vertices which constitute the cycle if it exists, an empty list otherwise.
      */
     private List<PendingTransfer> findCycle(PendingTransfer v) {
@@ -190,93 +214,57 @@ public class ConcurrentStorageSystem implements StorageSystem {
         return false;
     }
 
-    // Inherits the critical section - deviceLock.
-    private void moveWithoutWaiting(PendingTransfer p, Device src, Device dst) throws InterruptedException {
-        dst.modifyFreeSpace(-1);
-        List<PendingTransfer> chain = makeAllowedChain(p, src);
-        removeFromGraph(chain);
-        linkTransfersInChain(chain, false); // TODO: czy to w locku?
-        devicesLock.release();
-
-        freeAllWaiting(chain);
-        executeTransfer(p, false, true);
-        freeSpaceFromLastInChainOrWake(chain);
-    }
-
     private void linkTransfersInChain(List<PendingTransfer> transfers, boolean isCycle) {
-        transfers.get(0).setFirst(true);
-
         Iterator<PendingTransfer> nextIt = transfers.iterator();
         Iterator<PendingTransfer> it = transfers.iterator();
         nextIt.next();
 
         while (nextIt.hasNext()) {
             PendingTransfer next = nextIt.next();
-            it.next().setNext(next);
+            PendingTransfer itTransfer = it.next();
+            itTransfer.setNext(next);
+            next.setPrevious(itTransfer);
         }
 
         if (isCycle) {
-            transfers.get(transfers.size() - 1).setNext(transfers.get(0));
+            PendingTransfer first = transfers.get(0);
+            PendingTransfer last = transfers.get(transfers.size() - 1);
+            link(first, last);
         }
     }
 
     private void freeAllWaiting(List<PendingTransfer> transfers) {
         for (PendingTransfer t : transfers) {
-            t.callingThreadLock().release();
+            t.prepareLock().release();
         }
     }
 
-    private void freeSpaceFromLastInChainOrWake(List<PendingTransfer> chain) throws InterruptedException {
-        PendingTransfer lastInChain = chain.get(chain.size() - 1);
-        Device src = null;
-        if (lastInChain.getSourceDeviceId() != null)
-            src = devices.get(lastInChain.getSourceDeviceId());
-
-        if (src != null) {
-            devicesLock.acquire();
-            if (src.inbound().isEmpty())
-                src.modifyFreeSpace(1);
-            else
-                wakeInboundTransfer(src);
-            devicesLock.release();
-        }
-    }
-
-    /**
-     * Has to be called with devicesLock held!
-     */
-    private void wakeInboundTransfer(Device dev) {
-        PendingTransfer next = dev.findOldestInbound();
-        next.setFirst(true);
-        next.callingThreadLock().release();
-    }
-
-    private void executeTransfer(PendingTransfer t, boolean skipFirstLock, boolean skipSecondLock) throws InterruptedException {
-        if (!skipFirstLock)
-            t.callingThreadLock().acquire();
+    private void executeTransfer(PendingTransfer t) throws InterruptedException {
+        // STARE: TODO: co gdy ostatni transfer puścił free, a po tym dołączył się inny na jego koniec -> deadlock
+        if (t.previous() == null || t.previous().phrase().equals(PendingTransfer.Phrase.WAITING))
+            t.prepareLock().acquire();
         t.prepare();
-        if (!skipSecondLock)
-            t.callingThreadLock().acquire();
+        if (t.previous() != null && (t.previous().phrase().equals(PendingTransfer.Phrase.WAITING) || t.previous().phrase().equals(PendingTransfer.Phrase.PREPARE)))
+            t.performLock().acquire();
         t.perform();
 
         // update the location of components
-        // TODO czy to potrzebne
         if (t.source() != null)
             t.source().removeComponent(t.getComponentId());
         if (t.destination() != null)
             t.destination().insertComponent(t.getComponentId());
-
-//        // TODO ???
-//        if (t.previous() == null) {
-//            devicesLock.acquire();
-//            t.source().modifyFreeSpace(1);
-//            devicesLock.release();
-//        }
     }
 
     private void addExecutingTransfer(PendingTransfer t) {
         if (t.source() != null) {
             t.source().executingTransfers().add(t);
+        }
+    }
+
+    private void removeExecutingTransferAndFreeSpace(PendingTransfer t) {
+        if (t.source() != null) {
+            t.source().executingTransfers().remove(t);
+            t.source().modifyFreeSpace(1);
         }
     }
 

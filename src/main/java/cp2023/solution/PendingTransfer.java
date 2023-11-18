@@ -6,19 +6,23 @@ import cp2023.base.DeviceId;
 
 import java.util.concurrent.Semaphore;
 
-public class PendingTransfer implements ComponentTransfer {
+public class PendingTransfer implements ComponentTransfer, Comparable<PendingTransfer> {
     private final ComponentTransfer originalTransfer;
     private final Device source;
     private final Device destination;
-    private final Semaphore callingThreadLock;
+    private final Semaphore prepareLock;
+    private final Semaphore performLock;
     private PendingTransfer next;
-    private boolean isFirst;
+    private PendingTransfer previous;
+    private volatile Phrase phrase;
 
     public PendingTransfer(ComponentTransfer originalTransfer, Device source, Device destination) {
         this.originalTransfer = originalTransfer;
         this.source = source;
         this.destination = destination;
-        this.callingThreadLock = new Semaphore(0);
+        this.performLock = new Semaphore(0);
+        this.prepareLock = new Semaphore(0);
+        this.phrase = Phrase.WAITING;
     }
 
     @Override
@@ -38,18 +42,19 @@ public class PendingTransfer implements ComponentTransfer {
 
     @Override
     public void prepare() {
+        phrase = Phrase.PREPARE;
+        if (next != null)
+            next.prepareLock.release();
         originalTransfer.prepare();
         if (next != null)
-            next.callingThreadLock.release();
+            next.performLock.release();
     }
 
     @Override
     public void perform() {
+        phrase = Phrase.PERFORM;
         originalTransfer.perform();
-    }
-
-    public Semaphore callingThreadLock() {
-        return callingThreadLock;
+        phrase = Phrase.FINISHED;
     }
 
     public PendingTransfer next() {
@@ -68,14 +73,6 @@ public class PendingTransfer implements ComponentTransfer {
         return destination;
     }
 
-    public void setFirst(boolean isFirst) {
-        this.isFirst = isFirst;
-    }
-
-    public boolean isFirst() {
-        return isFirst;
-    }
-
     @Override
     public String toString() {
         return "PendingTransfer{" +
@@ -83,7 +80,35 @@ public class PendingTransfer implements ComponentTransfer {
                 ", source=" + (source == null ? "null" : source.id()) +
                 ", destination=" + (destination == null ? "null" : destination.id()) +
                 ", next=" + (next != null ? next.originalTransfer.toString() : "null") +
-                ", isFirst=" + isFirst +
                 '}';
+    }
+
+    public Phrase phrase() {
+        return phrase;
+    }
+
+    public PendingTransfer previous() {
+        return previous;
+    }
+
+    public void setPrevious(PendingTransfer previous) {
+        this.previous = previous;
+    }
+
+    public Semaphore prepareLock() {
+        return prepareLock;
+    }
+
+    public Semaphore performLock() {
+        return performLock;
+    }
+
+    @Override
+    public int compareTo(PendingTransfer pendingTransfer) {
+        return originalTransfer.getComponentId().compareTo(pendingTransfer.getComponentId());
+    }
+
+    public enum Phrase {
+        WAITING, PREPARE, PERFORM, FINISHED
     }
 }
