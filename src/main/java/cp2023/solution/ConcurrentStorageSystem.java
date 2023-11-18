@@ -13,9 +13,9 @@ import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.Semaphore;
 
 public class ConcurrentStorageSystem implements StorageSystem {
-    private Semaphore devicesLock;
+    private final Semaphore devicesLock;
+    private final Set<ComponentId> activeComponents;
     public ConcurrentMap<DeviceId, Device> devices; // TODO: public -> private i np. concurrent hash set?
-    private Set<ComponentId> activeComponents;
 
     public ConcurrentStorageSystem() {
         this.devicesLock = new Semaphore(1, true);
@@ -107,6 +107,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
         buildExecutionChainAndExecute(new PendingTransfer(transfer, src, null));
     }
 
+
     /**
      * Requires devicesLock to be held!
      */
@@ -159,18 +160,31 @@ public class ConcurrentStorageSystem implements StorageSystem {
         return transfers;
     }
 
-    private void removeFromGraph(Collection<PendingTransfer> transfers) {
-        for (PendingTransfer t : transfers)
-            if (t.destination() != null)
-                t.destination().removeInbound(t);
-    }
-
     /**
      * Requires devicesLock to be held!
      */
     private void link(PendingTransfer next, PendingTransfer previos) {
         next.setPrevious(previos);
         previos.setNext(next);
+    }
+
+    private void linkTransfersInChain(List<PendingTransfer> transfers, boolean isCycle) {
+        Iterator<PendingTransfer> nextIt = transfers.iterator();
+        Iterator<PendingTransfer> it = transfers.iterator();
+        nextIt.next();
+
+        while (nextIt.hasNext()) {
+            PendingTransfer next = nextIt.next();
+            PendingTransfer itTransfer = it.next();
+            itTransfer.setNext(next);
+            next.setPrevious(itTransfer);
+        }
+
+        if (isCycle) {
+            PendingTransfer first = transfers.get(0);
+            PendingTransfer last = transfers.get(transfers.size() - 1);
+            link(first, last);
+        }
     }
 
     /**
@@ -188,6 +202,11 @@ public class ConcurrentStorageSystem implements StorageSystem {
         return true;
     }
 
+    private void removeFromGraph(Collection<PendingTransfer> transfers) {
+        for (PendingTransfer t : transfers)
+            if (t.destination() != null)
+                t.destination().removeInbound(t);
+    }
 
     /** Finds a cycle if it exists. Requires devicesLock to be held.
      * @return A list containing vertices which constitute the cycle if it exists, an empty list otherwise.
@@ -217,24 +236,6 @@ public class ConcurrentStorageSystem implements StorageSystem {
         return false;
     }
 
-    private void linkTransfersInChain(List<PendingTransfer> transfers, boolean isCycle) {
-        Iterator<PendingTransfer> nextIt = transfers.iterator();
-        Iterator<PendingTransfer> it = transfers.iterator();
-        nextIt.next();
-
-        while (nextIt.hasNext()) {
-            PendingTransfer next = nextIt.next();
-            PendingTransfer itTransfer = it.next();
-            itTransfer.setNext(next);
-            next.setPrevious(itTransfer);
-        }
-
-        if (isCycle) {
-            PendingTransfer first = transfers.get(0);
-            PendingTransfer last = transfers.get(transfers.size() - 1);
-            link(first, last);
-        }
-    }
 
     private void freeAllWaiting(List<PendingTransfer> transfers) {
         for (PendingTransfer t : transfers) {
@@ -269,6 +270,16 @@ public class ConcurrentStorageSystem implements StorageSystem {
             t.source().executingTransfers().remove(t);
             t.source().modifyFreeSpace(1);
         }
+    }
+
+    public void addComponent(DeviceId deviceId, ComponentId componentId) {
+        Device dev = devices.get(deviceId);
+        dev.insertComponent(componentId);
+        dev.modifyFreeSpace(-1);
+    }
+
+    public void initialiseDevices(Map<DeviceId, Integer> deviceTotalSlots) {
+        deviceTotalSlots.forEach((id, capacity) -> devices.put(id, new Device(id, capacity)));
     }
 
     /**
@@ -306,15 +317,5 @@ public class ConcurrentStorageSystem implements StorageSystem {
         if (activeComponents.contains(id)) {
             throw new ComponentIsBeingOperatedOn(id);
         }
-    }
-
-    public void initialiseDevices(Map<DeviceId, Integer> deviceTotalSlots) {
-        deviceTotalSlots.forEach((id, capacity) -> devices.put(id, new Device(id, capacity)));
-    }
-
-    public void addComponent(DeviceId deviceId, ComponentId componentId) {
-        Device dev = devices.get(deviceId);
-        dev.insertComponent(componentId);
-        dev.modifyFreeSpace(-1);
     }
 }
