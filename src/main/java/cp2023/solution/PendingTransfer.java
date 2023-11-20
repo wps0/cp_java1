@@ -46,13 +46,13 @@ public class PendingTransfer implements ComponentTransfer, Comparable<PendingTra
         if (next != null)
             next.prepareLock.release();
         originalTransfer.prepare();
+        phrase = Phrase.PERFORM;
         if (next != null)
             next.performLock.release();
     }
 
     @Override
     public void perform() {
-        phrase = Phrase.PERFORM;
         originalTransfer.perform();
         phrase = Phrase.FINISHED;
     }
