@@ -31,10 +31,10 @@ public final class TransferBurst {
 
     private static void printStatus(StorageSystem system) {
         ConcurrentStorageSystem css = (ConcurrentStorageSystem) system;
-        css.devices.forEach((deviceId, device) -> {
-            System.out.println("--------------");
-            System.out.println(device);
-        });
+//        css.devices.forEach((deviceId, device) -> {
+//            System.out.println("--------------");
+//            System.out.println(device);
+//        });
     }
 
     private final static StorageSystem setupSystem() {

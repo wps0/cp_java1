@@ -7,13 +7,12 @@
  */
 package cp2023.solution;
 
-import java.util.Map;
-import java.util.stream.Collectors;
-
 import cp2023.base.ComponentId;
 import cp2023.base.DeviceId;
 import cp2023.base.StorageSystem;
 
+import java.util.Map;
+import java.util.stream.Collectors;
 
 public final class StorageSystemFactory {
 

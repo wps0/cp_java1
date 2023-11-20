@@ -13,9 +13,9 @@ public class Device {
     private final DeviceId id;
     private final int capacity;
     private int freeSpace;
-    private ConcurrentMap<ComponentId, Boolean> components;
-    private Queue<PendingTransfer> inbound;
-    private ConcurrentSkipListSet<PendingTransfer> executingTransfers;
+    private final ConcurrentMap<ComponentId, Boolean> components;
+    private final Queue<PendingTransfer> inbound;
+    private final ConcurrentSkipListSet<PendingTransfer> executingTransfers;
 
     public Device(DeviceId id, int capacity) {
         this.id = id;
@@ -28,7 +28,6 @@ public class Device {
 
     public void modifyFreeSpace(int delta) {
         freeSpace += delta;
-        assert(freeSpace >= 0);
     }
 
     public boolean contains(ComponentId id) {

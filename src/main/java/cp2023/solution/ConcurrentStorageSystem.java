@@ -15,7 +15,7 @@ import java.util.concurrent.Semaphore;
 public class ConcurrentStorageSystem implements StorageSystem {
     private final Semaphore devicesLock;
     private final Set<ComponentId> activeComponents;
-    public ConcurrentMap<DeviceId, Device> devices; // TODO: public -> private i np. concurrent hash set?
+    private final ConcurrentMap<DeviceId, Device> devices;
 
     public ConcurrentStorageSystem() {
         this.devicesLock = new Semaphore(1, true);
@@ -163,7 +163,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
     /**
      * Requires devicesLock to be held!
      */
-    private void link(PendingTransfer next, PendingTransfer previos) {
+    private void linkTransfers(PendingTransfer next, PendingTransfer previos) {
         next.setPrevious(previos);
         previos.setNext(next);
     }
@@ -183,7 +183,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
         if (isCycle) {
             PendingTransfer first = transfers.get(0);
             PendingTransfer last = transfers.get(transfers.size() - 1);
-            link(first, last);
+            linkTransfers(first, last);
         }
     }
 
@@ -197,7 +197,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
         }
 
         PendingTransfer lastInChain = et.pollFirst();
-        link(t, lastInChain);
+        linkTransfers(t, lastInChain);
         buildExecutionChain(t);
         return true;
     }
@@ -212,7 +212,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
      * @return A list containing vertices which constitute the cycle if it exists, an empty list otherwise.
      */
     private List<PendingTransfer> findCycle(PendingTransfer v) {
-        Stack<PendingTransfer> cycle = new Stack<>();
+        Deque<PendingTransfer> cycle = new ArrayDeque<>();
         if (!cycleDfs(v, cycle, v.destination()))
             return List.of();
         return cycle.stream().toList();
@@ -221,7 +221,7 @@ public class ConcurrentStorageSystem implements StorageSystem {
     /**
      * Requires devicesLock to be held!
      */
-    private boolean cycleDfs(PendingTransfer v, Stack<PendingTransfer> hist, Device end) {
+    private boolean cycleDfs(PendingTransfer v, Deque<PendingTransfer> hist, Device end) {
         hist.push(v);
         if (v.source() == end)
             return true;
@@ -244,7 +244,6 @@ public class ConcurrentStorageSystem implements StorageSystem {
     }
 
     private void executeTransfer(PendingTransfer t) throws InterruptedException {
-        // STARE: TODO: co gdy ostatni transfer puścił free, a po tym dołączył się inny na jego koniec -> deadlock
         if (t.previous() == null || t.previous().phrase().equals(PendingTransfer.Phrase.WAITING))
             t.prepareLock().acquire();
         t.prepare();
