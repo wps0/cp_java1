@@ -16,7 +16,6 @@ import cp2023.base.ComponentTransfer;
 import cp2023.base.DeviceId;
 import cp2023.base.StorageSystem;
 import cp2023.exceptions.TransferException;
-import cp2023.solution.ConcurrentStorageSystem;
 import cp2023.solution.StorageSystemFactory;
 
 
@@ -26,15 +25,6 @@ public final class TransferBurst {
         StorageSystem system = setupSystem();
         Collection<Thread> users = setupTransferers(system);
         runTransferers(users);
-        printStatus(system);
-    }
-
-    private static void printStatus(StorageSystem system) {
-        ConcurrentStorageSystem css = (ConcurrentStorageSystem) system;
-//        css.devices.forEach((deviceId, device) -> {
-//            System.out.println("--------------");
-//            System.out.println(device);
-//        });
     }
 
     private final static StorageSystem setupSystem() {
@@ -80,46 +70,38 @@ public final class TransferBurst {
         transferer.add(new Thread(new Runnable() {
             @Override
             public void run() {
-                int id = 1;
-                int id2 = (int) Thread.currentThread().getId();
                 sleep(10);
-                System.out.println("Transferer " + id + " (" + id2 + ") has started.");
+                System.out.println("Transferer " + Thread.currentThread().getId() + " has started.");
                 executeTransfer(system, 101, 1, 3, 20);
                 sleep(30);
                 executeTransfer(system, 105, 2, 0, 10);
-                System.out.println("Transferer " + id + " has finished.");
+                System.out.println("Transferer " + Thread.currentThread().getId() + " has finished.");
             }
         }));
         transferer.add(new Thread(new Runnable() {
             @Override
             public void run() {
-                int id = 2;
-                int id2 = (int) Thread.currentThread().getId();
-                System.out.println("Transferer " + id + " (" + id2 + ") has started.");
+                System.out.println("Transferer " + Thread.currentThread().getId() + " has started.");
                 executeTransfer(system, 110, 0, 1, 10);
-                System.out.println("Transferer " + id + " has finished.");
+                System.out.println("Transferer " + Thread.currentThread().getId() + " has finished.");
             }
         }));
         transferer.add(new Thread(new Runnable() {
             @Override
             public void run() {
-                int id = 3;
-                int id2 = (int) Thread.currentThread().getId();
-                System.out.println("Transferer " + id + " (" + id2 + ") has started.");
+                System.out.println("Transferer " + Thread.currentThread().getId() + " has started.");
                 executeTransfer(system, 109, 3, 2, 10);
                 sleep(30);
                 executeTransfer(system, 102, 1, 0, 10);
-                System.out.println("Transferer " + id + " has finished.");
+                System.out.println("Transferer " + Thread.currentThread().getId() + " has finished.");
             }
         }));
         transferer.add(new Thread(new Runnable() {
             @Override
             public void run() {
-                int id = 4;
-                int id2 = (int) Thread.currentThread().getId();
-                System.out.println("Transferer " + id + " (" + id2 + ") has started.");
+                System.out.println("Transferer " + Thread.currentThread().getId() + " has started.");
                 executeTransfer(system, 107, 3, 1, 10);
-                System.out.println("Transferer " + id + " has finished.");
+                System.out.println("Transferer " + Thread.currentThread().getId() + " has finished.");
             }
         }));
         return transferer;
